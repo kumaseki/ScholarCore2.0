@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 import logging
 import json
 import math
@@ -29,6 +30,9 @@ class DailyFlow:
         self.reports_dir = self.config.data_path / "reports" / "daily_meta"
         self.cache_dir = self.config.data_path / "raw_cache"
         
+        now = datetime.now()
+        self.reports_dir = self.config.data_path / "reports" / "daily" / f"{now.year}" / f"{now.month:02d}"
+        
         # 确保目录存在
         ensure_dir(self.reports_dir)
         ensure_dir(self.inbox_dir)
@@ -37,7 +41,7 @@ class DailyFlow:
         # 模板引擎
         self.jinja_env = Environment(
             loader=FileSystemLoader(str(self.assets_dir)),
-            autoescape=False # Prompt 不需要 HTML 转义
+            autoescape=False
         )
 
     def _render(self, template_name: str, context: dict) -> str:
@@ -185,6 +189,9 @@ class DailyFlow:
         if not papers:
             logger.info("📭 No new papers found today.")
             return
+        
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        self._save_checkpoint(papers, date_str)
 
         # 防止后面 LLM 崩溃导致数据丢失，不需要重新爬 Arxiv
         self._save_checkpoint(papers, time.strftime("%Y-%m-%d"))
@@ -216,15 +223,15 @@ class DailyFlow:
         high_quality_papers = [p for p in scored_papers if p.get('score', 0) >= 2.5]
         if high_quality_papers or force_email:
             logger.info(f"--- 📧 Stage 4: Reporting ({len(high_quality_papers)} candidates) ---")
-            self._send_daily_report(scored_papers)
+            self._send_daily_report(scored_papers, date_str)
         else:
             logger.info("--- 📧 Stage 4: Skipped (No high scores) ---")
 
         logger.info("🎉 === Daily Flow Complete ===")
 
-    def _send_daily_report(self, all_papers: List[Dict]):
-        send_threshold = self.email.conf.get('send_threshold', 3.0)
-        top_k = self.email.conf.get('top_k', 15)
+    def _send_daily_report(self, all_papers: List[Dict], date_str: str):
+        send_threshold = self.config.get('email.send_threshold', 3.0)
+        top_k = self.config.get('email.top_k', 15)
         
         display_papers = all_papers[:top_k]
         hidden_count = len(all_papers) - len(display_papers)
@@ -232,12 +239,12 @@ class DailyFlow:
         # 渲染邮件模板
         # 注意：templates/email_daily.html 的路径是相对于 assets 的
         html = self._render("templates/email_daily.html", {
-            "date_str": time.strftime("%Y-%m-%d"),
+            "date_str": date_str,
             "total_count": len(all_papers),
             "display_papers": display_papers,
             "hidden_count": hidden_count
         })
-        
-        subject = f"ScholarCore Daily: {len([p for p in all_papers if p.get('score',0)>=send_threshold])} Papers Selected"
+        qualified_count = len([p for p in all_papers if p.get('score', 0) >= send_threshold])
+        subject = f"ScholarCore Daily: {qualified_count} Papers Selected ({date_str})"
         
         self.email.send(subject, html)
