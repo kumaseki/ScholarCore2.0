@@ -48,4 +48,4 @@ def configure_logging(level=logging.INFO):
     logging.getLogger("arxiv").setLevel(logging.WARNING) 
 
     _LOGGING_CONFIGURED = True
-    logging.info("📝 Logging system configured successfully.")
+    # logging.info("📝 Logging system configured successfully.")

@@ -24,7 +24,7 @@ class Config:
         with open(config_path, 'r', encoding='utf-8') as f:
             self._config_data = yaml.safe_load(f)
 
-        # --- 1. LLM 配置 (从 ENV 注入) ---
+        # --- 1. LLM 配置 ---
         if 'llm' not in self._config_data:
             self._config_data['llm'] = {}
         
@@ -34,7 +34,7 @@ class Config:
         
         self._config_data['llm']['api_key'] = api_key
         
-        # --- 2. 邮箱配置 (基础设施层 - 强制从 ENV 读取) ---
+        # --- 2. 邮箱配置 ---
         if 'email' not in self._config_data:
             self._config_data['email'] = {}
         

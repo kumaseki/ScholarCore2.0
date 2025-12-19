@@ -2,6 +2,7 @@ import time
 import logging
 import json
 import math
+from tqdm import tqdm
 from typing import List, Dict
 from jinja2 import Environment, FileSystemLoader
 
@@ -77,8 +78,10 @@ class DailyFlow:
             batch = papers[i : i + batch_size]
             batch_idx = i // batch_size + 1
             
-            titles_preview = " | ".join([p['title'][:30]+"..." for p in batch])
-            logger.info(f"⚡ Batch {batch_idx}/{num_batches} -> Processing: {titles_preview}")
+            logger.info(f"⚡ Batch {batch_idx}/{num_batches} -> Start")
+            
+            # titles_preview = " | ".join([p['title'][:30]+"..." for p in batch])
+            # logger.info(f"⚡ Batch {batch_idx}/{num_batches} -> Processing: {titles_preview}")
 
             user_content = "Please analyze these papers:\n\n"
             for j, p in enumerate(batch):
@@ -186,7 +189,7 @@ class DailyFlow:
 
         # 防止后面 LLM 崩溃导致数据丢失，不需要重新爬 Arxiv
         self._save_checkpoint(papers, time.strftime("%Y-%m-%d"))
-        logger.info(f"💾 Checkpoint saved: {len(papers)} papers cached.")
+        # logger.info(f"💾 Checkpoint saved: {len(papers)} papers cached.")
 
         if max_limit:
              papers = papers[:max_limit]
@@ -208,21 +211,23 @@ class DailyFlow:
         meta_file = self.reports_dir / f"{date_str}_daily.json"
         with open(meta_file, 'w', encoding='utf-8') as f:
             json.dump(scored_papers, f, ensure_ascii=False, indent=2)
-        logger.info(f"💾 Metadata saved to: {meta_file.name}")
+        # logger.info(f"💾 Metadata saved to: {meta_file.name}")
 
         # Email
         high_quality_papers = [p for p in scored_papers if p.get('score', 0) >= 2.5]
         if high_quality_papers or force_email:
             logger.info(f"--- 📧 Stage 4: Reporting ({len(high_quality_papers)} candidates) ---")
-            self._send_daily_report(scored_papers, top_k=15)
+            self._send_daily_report(scored_papers)
         else:
             logger.info("--- 📧 Stage 4: Skipped (No high scores) ---")
 
         logger.info("🎉 === Daily Flow Complete ===")
 
-    def _send_daily_report(self, all_papers: List[Dict], top_k=15):
-        candidates = [p for p in all_papers if p.get('score', 0) >= 2.5]
-        display_papers = candidates[:top_k]
+    def _send_daily_report(self, all_papers: List[Dict]):
+        send_threshold = self.email.conf.get('send_threshold', 3.0)
+        top_k = self.email.conf.get('top_k', 15)
+        
+        display_papers = all_papers[:top_k]
         hidden_count = len(all_papers) - len(display_papers)
         
         # 渲染邮件模板
@@ -234,6 +239,6 @@ class DailyFlow:
             "hidden_count": hidden_count
         })
         
-        subject = f"ScholarCore Daily: {len([p for p in all_papers if p.get('score',0)>=2.5])} Papers Selected"
+        subject = f"ScholarCore Daily: {len([p for p in all_papers if p.get('score',0)>=send_threshold])} Papers Selected"
         
         self.email.send(subject, html)

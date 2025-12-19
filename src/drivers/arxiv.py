@@ -37,7 +37,7 @@ class ArxivDriver:
         return list(client.results(search_obj))
 
     def search(self, query: str, days_back: int = 1, limit: int = None) -> List[Dict[str, Any]]:
-        logger.info(f"🔍 Searching Arxiv: query='{query}', days_back={days_back}, limit={limit}")
+        # logger.info(f"🔍 Searching Arxiv: query='{query}', days_back={days_back}, limit={limit}")
         
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
 
