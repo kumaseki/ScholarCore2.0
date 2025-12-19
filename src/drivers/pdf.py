@@ -18,36 +18,48 @@ class PDFDriver:
 
     def download(self, url: str, save_path: Path) -> Path:
         """
-        下载 PDF 到指定路径。
+        原子化下载：先下载到 .tmp，成功后再重命名。
         """
         if save_path.exists():
-            logger.info(f"PDF already exists, skipping download: {save_path.name}")
-            return save_path
-
+            # 这里可以加一个校验：如果文件大小为0，视为损坏，强制重新下载
+            if save_path.stat().st_size > 0:
+                logger.info(f"PDF exists, skipping: {save_path.name}")
+                return save_path
+            else:
+                logger.warning(f"Found empty PDF file, re-downloading: {save_path.name}")
+                
         logger.info(f"Downloading PDF: {url} -> {save_path}")
+        
+        # 临时文件路径
+        temp_path = save_path.with_suffix('.tmp')
         
         try:
             response = requests.get(url, headers=self.headers, stream=True, timeout=30)
             if response.status_code != 200:
-                raise FetchError(
-                    message="Download failed", 
-                    resource_url=url, 
-                    status_code=response.status_code
-                )
+                raise FetchError("Download failed", resource_url=url, status_code=response.status_code)
             
-            # 确保父目录存在
             save_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(save_path, "wb") as f:
+            # 写入临时文件
+            with open(temp_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             
+            # 原子操作：重命名
+            # 如果 temp_path 写完了没报错，说明文件是完整的，这就替换过去
+            if temp_path.exists():
+                shutil.move(str(temp_path), str(save_path))
+            
             return save_path
-
-        except requests.RequestException as e:
-            raise FetchError(f"Network error during download: {str(e)}", resource_url=url)
-        except IOError as e:
-            raise FileWriteError(f"Failed to write PDF file: {str(e)}", file_path=str(save_path))
+        
+        except Exception as e:
+            # 清理垃圾
+            if temp_path.exists():
+                os.remove(temp_path)
+            
+            if isinstance(e, requests.RequestException):
+                raise FetchError(f"Network error: {str(e)}", resource_url=url)
+            raise FileWriteError(f"Write error: {str(e)}", file_path=str(save_path))
 
     def parse_text(self, pdf_path: Path) -> str:
         """
