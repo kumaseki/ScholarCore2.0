@@ -2,7 +2,6 @@ import time
 import logging
 import json
 import math
-from tqdm import tqdm
 from typing import List, Dict
 from jinja2 import Environment, FileSystemLoader
 

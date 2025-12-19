@@ -5,4 +5,3 @@ pyyaml
 requests
 tenacity
 jinja2
-tqdm    

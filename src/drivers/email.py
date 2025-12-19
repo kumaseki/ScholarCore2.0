@@ -14,8 +14,9 @@ class EmailDriver:
         self.config = GlobalConfig
         self.conf = self.config.get('email')
         
-        # 基础检查
-        if not self.conf.get('sender') or not self.conf.get('password'):
+        # 基础检查 - 同时支持 receiver（单数）和 receivers（复数）配置
+        has_receiver = self.conf.get('sender') and self.conf.get('password') and (self.conf.get('receiver') or self.conf.get('receivers'))
+        if not has_receiver:
             # 这里不抛出异常，因为可能用户只想跑本地而不发邮件
             # 但我们在 log 里严重警告
             logger.warning("⚠️ Email credentials missing in .env. Email features will fail.")
@@ -31,7 +32,18 @@ class EmailDriver:
         port = self.conf.get('port')
         use_ssl = self.conf.get('use_ssl')
         
-        final_receivers = receivers if receivers else self.conf.get('receivers')
+        # 处理收件人：优先使用传入参数，否则使用配置
+        if receivers:
+            final_receivers = receivers
+        else:
+            # 支持 receiver（单数）和 receivers（复数）配置
+            config_receivers = self.conf.get('receivers')
+            config_receiver = self.conf.get('receiver')
+            
+            # 优先级：receivers > receiver，统一转为列表格式
+            final_receivers = config_receivers
+            if not final_receivers and config_receiver:
+                final_receivers = [config_receiver] if isinstance(config_receiver, str) else config_receiver
 
         if not sender or not password or not host:
             raise ConfigurationError("Missing SMTP configuration", config_key="email")
@@ -45,8 +57,9 @@ class EmailDriver:
         try:
             # 2. 构造邮件对象
             message = MIMEMultipart()
-            message['From'] = Header(f"ScholarCore <{sender}>", 'utf-8')
-            message['To'] = Header(",".join(final_receivers), 'utf-8')
+            # 使用更兼容的编码方式，避免在某些客户端显示异常
+            message['From'] = f"ScholarCore <{sender}>"
+            message['To'] = ",".join(final_receivers)
             message['Subject'] = Header(subject, 'utf-8')
             message.attach(MIMEText(content_html, 'html', 'utf-8'))
 
