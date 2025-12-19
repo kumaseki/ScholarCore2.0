@@ -1,0 +1,7 @@
+openai
+arxiv>=2.1.0
+pymupdf
+pyyaml
+requests
+tenacity
+jinja2
