@@ -2,6 +2,7 @@ import os
 import requests
 import fitz  # PyMuPDF
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 

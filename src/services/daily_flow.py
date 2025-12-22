@@ -5,6 +5,7 @@ import json
 import math
 from typing import List, Dict
 from jinja2 import Environment, FileSystemLoader
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.core.config import GlobalConfig
 from src.drivers.arxiv import ArxivDriver
@@ -58,78 +59,121 @@ class DailyFlow:
         with open(ckpt_path, 'w', encoding='utf-8') as f:
             json.dump(papers, f, ensure_ascii=False, indent=2)
 
-    def _batch_score_papers(self, papers: List[Dict], batch_size=30) -> List[Dict]:
+    def _process_single_batch(self, batch: List[Dict], batch_idx: int, total_batches: int, system_prompt: str) -> List[Dict]:
+        """
+        [原子操作] 处理单个批次。
+        这个函数将在独立的线程中运行。
+        """
+        # 这里的 logger 在多线程下是安全的，但顺序可能会乱，这没关系
+        logger.info(f"⚡ Batch {batch_idx}/{total_batches} -> Processing ({len(batch)} papers)...")
+        
+        user_content = "Please analyze these papers:\n\n"
+        # 建立局部索引映射 (ID: 0~batch_size)
+        for j, p in enumerate(batch):
+            user_content += f"ID: {j} | Title: {p['title']}\nAbstract: {p['summary']}\n---\n"
+        
+        processed_batch = []
+        try:
+            # 调用 LLM (耗时操作)
+            raw_json = self.llm.chat_json(system_prompt, user_content)
+            result_list = normalize_list(raw_json)
+            
+            # 建立结果映射表
+            review_map = {}
+            for r in result_list:
+                raw_id = r.get('id')
+                try:
+                    if raw_id is not None:
+                        review_map[int(raw_id)] = r
+                except ValueError:
+                    continue
+            
+            # 合并结果
+            for local_id, p in enumerate(batch):
+                review = review_map.get(local_id)
+                if review:
+                    try:
+                        p['score'] = float(review.get('score', 0))
+                    except ValueError:
+                        p['score'] = 0.0
+                        
+                    p['reason'] = review.get('reason', 'N/A')
+                    p['summary_zh'] = review.get('summary_zh', 'N/A')
+                    
+                    if p['score'] >= 4.0:
+                        logger.info(f"   🌟 HIT [{p['score']}] (Batch {batch_idx}): {p['title'][:50]}...")
+                else:
+                    p['score'] = 0.0
+                    p['reason'] = "LLM missed this paper"
+                
+                processed_batch.append(p)
+
+            logger.info(f"✅ Batch {batch_idx}/{total_batches} -> Done.")
+            return processed_batch
+
+        except Exception as e:
+            logger.error(f"❌ Batch {batch_idx} failed: {e}")
+            # 容错处理：如果该批次失败，返回原数据并标记 0 分，防止整个流程崩溃
+            for p in batch:
+                p['score'] = 0.0
+                p['reason'] = f"Batch Error: {str(e)}"
+                processed_batch.append(p)
+            return processed_batch
+
+    def _batch_score_papers(self, papers: List[Dict], batch_size=25) -> List[Dict]:
+        """
+        [主控逻辑] 多线程调度器
+        """
         context = {
             "user_profile": self.config.get('daily_news.user_profile', ""),
-            "negative_patterns": self.config.get('daily_news.negative_patterns', []),
-            "white_list_keywords": self.config.get('daily_news.white_list_keywords', [])
-            }
-        
+            "black_list": self.config.get('daily_news.black_list', []),
+            "grey_list": self.config.get('daily_news.grey_list', []),
+            "white_list": self.config.get('daily_news.white_list', [])
+        }
         system_prompt = self._render("prompts/daily_score.md.j2", context)
 
         total_papers = len(papers)
-        scored_results = []
+        # 向上取整计算批次
         num_batches = math.ceil(total_papers / batch_size)
         
+        # 获取并发数配置，默认为 5
+        max_workers = self.config.get('system.max_workers', 5)
+        
         logger.info(f"🧠 Scoring Start: {total_papers} papers in {num_batches} batches.")
+        logger.info(f"🚀 Thread Pool: {max_workers} workers active.")
 
+        all_results = []
+        
+        # 准备数据切片
+        chunks = []
         for i in range(0, total_papers, batch_size):
-            batch = papers[i : i + batch_size]
-            batch_idx = i // batch_size + 1
-            
-            logger.info(f"⚡ Batch {batch_idx}/{num_batches} -> Start")
-            
-            # titles_preview = " | ".join([p['title'][:30]+"..." for p in batch])
-            # logger.info(f"⚡ Batch {batch_idx}/{num_batches} -> Processing: {titles_preview}")
+            chunks.append(papers[i : i + batch_size])
 
-            user_content = "Please analyze these papers:\n\n"
-            for j, p in enumerate(batch):
-                user_content += f"ID: {j} | Title: {p['title']}\nAbstract: {p['summary']}\n---\n"
-            
-            try:
-                raw_json = self.llm.chat_json(system_prompt, user_content)
-                result_list = normalize_list(raw_json)
-                
-                review_map = {}
-                for r in result_list:
-                    raw_id = r.get('id')
-                    try:
-                        if raw_id is not None:
-                            review_map[int(raw_id)] = r
-                    except ValueError:
-                        continue
-                
-                for local_id, p in enumerate(batch):
-                    review = review_map.get(local_id)
-                    if review:
-                        # 再次防护：防止 score 是 string
-                        try:
-                            p['score'] = float(review.get('score', 0))
-                        except ValueError:
-                            p['score'] = 0.0
-                            
-                        p['reason'] = review.get('reason', 'N/A')
-                        p['summary_zh'] = review.get('summary_zh', 'N/A')
-                        
-                        if p['score'] >= 4.0:
-                            logger.info(f"   🌟 HIT [{p['score']}]: {p['title']}")
-                    else:
-                        p['score'] = 0.0
-                        p['reason'] = "LLM missed this paper"
-                    
-                    scored_results.append(p)
+        # 启动线程池
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交任务
+            # future_to_batch 是一个字典，用来追踪每个任务对应的批次ID
+            future_to_batch = {
+                executor.submit(
+                    self._process_single_batch, 
+                    chunk, 
+                    idx + 1, 
+                    num_batches, 
+                    system_prompt
+                ): idx + 1 
+                for idx, chunk in enumerate(chunks)
+            }
 
-            except Exception as e:
-                logger.error(f"❌ Batch {batch_idx} failed: {e}")
-                # 出错也要保留原始数据，分数为0
-                for p in batch:
-                    p['score'] = 0.0
-                    p['reason'] = f"Batch Error: {str(e)}"
-                    scored_results.append(p)
-            
-            time.sleep(1.0)
-
-        return scored_results
+            # 收集结果 (as_completed 会在某个任务完成时立即 yield)
+            for future in as_completed(future_to_batch):
+                batch_id = future_to_batch[future]
+                try:
+                    result_chunk = future.result()
+                    all_results.extend(result_chunk)
+                except Exception as exc:
+                    logger.critical(f"🔥 Worker thread {batch_id} crashed unrecoverably: {exc}")
+        
+        return all_results
 
     def _download_high_scores(self, papers: List[Dict], threshold=4.0):
         targets = [p for p in papers if p.get('score', 0) >= threshold]
@@ -199,7 +243,7 @@ class DailyFlow:
 
         # 2. Score
         logger.info("--- 🧠 Stage 2: Semantic Scoring ---")
-        scored_papers = self._batch_score_papers(papers, batch_size=25)
+        scored_papers = self._batch_score_papers(papers, batch_size=30)
 
         # 3. Download
         logger.info("--- 📥 Stage 3: Asset Acquisition ---")

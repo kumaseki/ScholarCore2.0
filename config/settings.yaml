@@ -1,6 +1,7 @@
 system:
   log_level: "INFO"
-  data_root: "./data"
+  data_path: "./data"
+  max_workers: 10
 
 llm:
   model: "deepseek-chat"
@@ -18,7 +19,7 @@ daily_news:
 
   # 大领域的一个词描述
   fields: >
-    Network Security
+    Network Security (Specifically Inter-domain Routing Security)
 
   # 你的身份画像 (The Persona Context)
   user_profile: >
@@ -27,7 +28,7 @@ daily_news:
     我对 "General AI methods" 以及基于预训练大模型的方案感兴趣，但前提是它必须能迁移到 "Network Topology" 或 "Time-series Traffic" 等BGP数据上。
 
   # 核心关键词 (White List - 适当加分)
-  white_list_keywords:
+  white_list:
     - "BGP"
     - "Border Gateway Protocol"
     - "Routing Security"
@@ -38,20 +39,32 @@ daily_news:
     - "Root Cause Analysis (RCA)"
     - "Routing Anomaly Detection"
     - "Foundation Models for Networking"
-    - "AS relationship inference"
+    - "AS-relation inference"
 
-  # 负面模式 (Black List - 降分/封顶项)
-  # 命中这些词的论文，除非有惊天动地的通用算法，否则最高分不超过 3.0
-  negative_patterns: 
-    - "Satellite"       # 卫星
-    - "UAV"             # 无人机
-    - "Vehicular"       # 车联网
-    - "VANET"
-    - "Wireless Sensor" # 无线传感
-    - "IoT"             # 物联网 (除非涉及僵尸网络DDoS)
-    - "Hardware design" # 硬件设计
-    - "Circuit"         # 电路
-    - "Cryptography optimization" # 纯密码学优化
-    - "Blockchain"      # 区块链 (除非是专门做BGP去中心化的)
-    - "Adversarial Attack" # 对抗攻击 (除非是针对网络流的)
-    - "Image Processing" # 图像处理
+    # 【新增】灰名单 (Grey List) - 假朋友
+  # 命中这些词的论文，最高分强制锁定在 3.0 - 3.5
+  # 它们是好论文，但不是你的研究方向。
+  grey_list:
+    - "DNS"
+    - "DNSSEC"
+    - "DoH/DoT"
+    - "HTTPS Phishing"
+    - "Website Fingerprinting" # 这是流量分析，不是路由分析
+    - "Network Slicing" # 这是 5G/核心网，不是 BGP
+    - "5G/6G"
+    - "SDN" # 除非明确提到 Inter-domain SDN
+    - "Intrusion Detection System (IDS)" # 通常指企业内网流量，非骨干网路由
+    - "Malware Detection"
+
+  # 黑名单 (Black List) - 垃圾/噪音
+  # 命中这些，最高分 2.0
+  black_list: 
+    - "Satellite"
+    - "UAV/Drone"
+    - "Vehicular/VANET"
+    - "Wireless/WiFi/LoRa"
+    - "IoT"
+    - "Hardware/FPGA/Circuit"
+    - "Blockchain/Smart Contract/Ethereum"
+    - "Image/Video/Camera"
+    - "Adversarial Attack" # 除非明确说是针对 Graph 数据的
