@@ -60,15 +60,11 @@ class DailyFlow:
 
     def _batch_score_papers(self, papers: List[Dict], batch_size=30) -> List[Dict]:
         context = {
-            "user_profile": self.config.get('daily_news.user_profile', "General Computer Science"),
-            "rubric": {
-                "score_5": self.config.get('rubric.score_5', "N/A"),
-                "score_4": self.config.get('rubric.score_4', "N/A"),
-                "score_3": self.config.get('rubric.score_3', "N/A"),
-                "score_2": self.config.get('rubric.score_2', "N/A"),
-                "score_1": self.config.get('rubric.score_1', "N/A"),
+            "user_profile": self.config.get('daily_news.user_profile', ""),
+            "negative_patterns": self.config.get('daily_news.negative_patterns', []),
+            "white_list_keywords": self.config.get('daily_news.white_list_keywords', [])
             }
-        }
+        
         system_prompt = self._render("prompts/daily_score.md.j2", context)
 
         total_papers = len(papers)
@@ -203,7 +199,7 @@ class DailyFlow:
 
         # 2. Score
         logger.info("--- 🧠 Stage 2: Semantic Scoring ---")
-        scored_papers = self._batch_score_papers(papers, batch_size=30)
+        scored_papers = self._batch_score_papers(papers, batch_size=25)
 
         # 3. Download
         logger.info("--- 📥 Stage 3: Asset Acquisition ---")
@@ -220,7 +216,7 @@ class DailyFlow:
         # logger.info(f"💾 Metadata saved to: {meta_file.name}")
 
         # Email
-        high_quality_papers = [p for p in scored_papers if p.get('score', 0) >= 2.5]
+        high_quality_papers = [p for p in scored_papers if p.get('score', 0) >= 3.5]
         if high_quality_papers or force_email:
             logger.info(f"--- 📧 Stage 4: Reporting ({len(high_quality_papers)} candidates) ---")
             self._send_daily_report(scored_papers, date_str)
@@ -230,7 +226,7 @@ class DailyFlow:
         logger.info("🎉 === Daily Flow Complete ===")
 
     def _send_daily_report(self, all_papers: List[Dict], date_str: str):
-        send_threshold = self.config.get('email.send_threshold', 3.0)
+        send_threshold = self.config.get('email.send_threshold', 2.0)
         top_k = self.config.get('email.top_k', 15)
         
         display_papers = all_papers[:top_k]

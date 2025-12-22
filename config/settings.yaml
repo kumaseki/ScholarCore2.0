@@ -5,65 +5,53 @@ system:
 llm:
   model: "deepseek-chat"
   base_url: "https://api.deepseek.com/v1"
-  temperature: 0.3
+  temperature: 0.2
   max_tokens: 8000
 
 email:
-  send_threshold: 3.0   # 低于这个分数的根本不发邮件
+  send_threshold: 3.5   # 低于这个分数的根本不发邮件
   top_k: 30              # 邮件里最多只放前 30 篇
 
 daily_news:
   # Arxiv 分类 (爬的类别)
   subjects: ["cs.CV", "cs.CR", "cs.AI", "cs.NI", "cs.CE", "cs.DS", "cs.SY", "cs.SI"]
 
-  # 告诉 AI 你的身份和兴趣点
+  # 大领域的一个词描述
+  fields: >
+    Network Security
+
+  # 你的身份画像 (The Persona Context)
   user_profile: >
-    我是一名网络安全研究员，主要研究BGP、路由安全方法、异常检测技术、异常根因分析技术、路由安全防护系统构建。
-    我特别关注以下几个方面的研究：
-    -路由安全，路由异常检测，路由异常根因分析
-    -路由基准模型构建、网络建模、路由拓扑推断、AS-relation推断
-    -基于人工智能方法（尤其是大模型）的异常检测方法、溯源方法
-    -新的路由安全方案，如RPKI、ASPA
-# 动态评分示例 (Few-Shot)
-# 教 AI 怎么打分的关键。用户改这里就能适配不同学科领域。
-rubric:
-  score_5: |
-    标题: "Root Cause Analysis for Route Leaks using Fine-tuned Models."
-    原因: 完美匹配。结合核心领域（BGP）与特定兴趣（微调大模型/RCA）。正是我目前研究方向的最新文章。
-    得分: 5.0
+    我是网络安全领域的PI，专注于互联网核心路由（Inter-domain Routing, BGP）的安全。
+    我寻找的是能解决路由异常检测(Anomaly Detection)、路由异常溯源（或根因分析Root Cause Analysis, RCA）问题的方案。
+    我对 "General AI methods" 以及基于预训练大模型的方案感兴趣，但前提是它必须能迁移到 "Network Topology" 或 "Time-series Traffic" 等BGP数据上。
 
-  score_4: |
-    标题: "Transformer-based Anomaly Detection in Data Center Networks."
-    原因: 领域不同（数据中心网络），但问题（异常检测）和方法（Transformer）高度适用我的研究，我会乐意看到这种能给我工作带来启发的文章。
-    得分: 4.0
+  # 核心关键词 (White List - 适当加分)
+  white_list_keywords:
+    - "BGP"
+    - "Border Gateway Protocol"
+    - "Routing Security"
+    - "RPKI"
+    - "ASPA"
+    - "BGP Hijacking"
+    - "Route Leak"
+    - "Root Cause Analysis (RCA)"
+    - "Routing Anomaly Detection"
+    - "Foundation Models for Networking"
+    - "AS relationship inference"
 
-    标题："A Survey on Anomaly Detection in Data Center Networks."
-    原因：领域不同（数据中心网络），但是我会关注的问题的方法综述，我会乐意看到这种与我研究契合的方法论的综述性文章。
-    得分: 3.5
-
-  score_3: |
-    标题: "What is the next hop to more granular routing models"
-    原因: 并不是我会特别关注的方向，但是对我的工作会有潜在参考价值，或者可以扩展视野，会引起我一定的兴趣，也许会读完放在收藏夹里吃灰。
-    得分：3.0
-
-    标题: "ROA与ROV机制的部署与路由泄露"
-    原因: 路由泄露确实是我关注的一个关键安全问题，我关注的重点在于如何检测相关情况，RPKI是一种有效的路由安全机制，我会需要相关文章补充知识面。
-    得分: 3.5
-
-  score_2: |
-    标题："DNS攻击与缓解方法"
-    原因: 与我研究领域有一定相关性，也许路由异常可能诱导DNS攻击，但并不是我的研究需要关注的东西。
-    得分: 2.5
-
-    标题："RPKI中的密码学原理与性能优化"
-    原因: RPKI确实与路由安全密切相关，但是我并不关注RPKI的性能怎么样，我只关心RPKI对路由异常有什么作用，以及我该怎么用RPKI标签或数据。
-    得分: 2.0
-
-  score_1: |
-    标题: "通过自监督学习训练视觉模型"
-    原因: 与我的研究领域也许有那么一丁点相关性，但阅读它大概率是浪费时间。如果是通过自监督学习做路由异常分类，我也许能给到3.5分。
-    得分: 1.5
-
-    标题: "Efficient Chip Routing for VLSI Design."
-    原因: 不相关，与我研究领域完全无关，完全是陷阱，阅读它只会浪费我的时间。
-    得分: 1.0甚至0分
+  # 负面模式 (Black List - 降分/封顶项)
+  # 命中这些词的论文，除非有惊天动地的通用算法，否则最高分不超过 3.0
+  negative_patterns: 
+    - "Satellite"       # 卫星
+    - "UAV"             # 无人机
+    - "Vehicular"       # 车联网
+    - "VANET"
+    - "Wireless Sensor" # 无线传感
+    - "IoT"             # 物联网 (除非涉及僵尸网络DDoS)
+    - "Hardware design" # 硬件设计
+    - "Circuit"         # 电路
+    - "Cryptography optimization" # 纯密码学优化
+    - "Blockchain"      # 区块链 (除非是专门做BGP去中心化的)
+    - "Adversarial Attack" # 对抗攻击 (除非是针对网络流的)
+    - "Image Processing" # 图像处理
